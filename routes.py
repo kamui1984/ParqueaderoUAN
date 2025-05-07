@@ -1,0 +1,319 @@
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, current_app
+from flask_httpauth import HTTPBasicAuth
+from sqlalchemy.orm import Session
+from models import Puesto, Vehiculo, Tarifa, RegistroParqueo, ConfiguracionParqueadero, Usuario, get_db
+from datetime import datetime, timedelta
+import bcrypt
+import math
+from functools import wraps
+
+# Crear un Blueprint para las rutas
+routes = Blueprint('routes', __name__)
+
+# Configurar autenticación básica
+auth = HTTPBasicAuth()
+
+# Verificar contraseña
+@auth.verify_password
+def verify_password(username, password):
+    db = next(get_db())
+    user = db.query(Usuario).filter_by(nombre_usuario=username).first()
+    if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        return username
+    return None
+
+# Decorador para rutas protegidas con autenticación
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not auth.current_user():
+            return redirect(url_for('routes.login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Ruta para la página principal
+@routes.route('/')
+def index():
+    return render_template('index.html')
+
+# Ruta para el login
+@routes.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        if verify_password(username, password):
+            flash('Inicio de sesión exitoso', 'success')
+            return redirect(url_for('routes.dashboard'))
+        else:
+            flash('Credenciales inválidas. Intente nuevamente.', 'danger')
+    
+    return render_template('login.html')
+
+# Ruta para el dashboard
+@routes.route('/dashboard')
+@auth.login_required
+def dashboard():
+    db = next(get_db())
+    
+    # Obtener la configuración actual del parqueadero
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    # Cantidad de puestos disponibles
+    puestos_disponibles = db.query(Puesto).filter_by(disponible=True).count()
+    
+    # Porcentaje de disponibilidad
+    porcentaje_disponibilidad = (puestos_disponibles / config.total_puestos) * 100
+    
+    # Ingresos totales (suma de total_pagado de todos los registros)
+    ingresos_totales = db.query(RegistroParqueo).filter(RegistroParqueo.total_pagado != None).with_entities(
+        func.sum(RegistroParqueo.total_pagado)
+    ).scalar() or 0
+    
+    # Carros actualmente en el parqueadero
+    carros_actuales = db.query(RegistroParqueo).filter(RegistroParqueo.hora_salida == None).all()
+    
+    # Tarifa actual
+    tarifa_actual = db.query(Tarifa).filter(
+        Tarifa.fecha_fin_vigencia == None
+    ).first()
+    
+    return render_template(
+        'dashboard.html', 
+        config=config,
+        puestos_disponibles=puestos_disponibles,
+        porcentaje_disponibilidad=porcentaje_disponibilidad,
+        ingresos_totales=ingresos_totales,
+        carros_actuales=carros_actuales,
+        tarifa_actual=tarifa_actual,
+        hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+# Ruta para ver todos los puestos
+@routes.route('/puestos')
+@auth.login_required
+def puestos():
+    db = next(get_db())
+    puestos = db.query(Puesto).order_by(Puesto.id_puesto).all()
+    
+    # Para cada puesto, obtener el registro de parqueo activo si existe
+    puestos_info = []
+    for puesto in puestos:
+        registro = db.query(RegistroParqueo).filter(
+            RegistroParqueo.id_puesto == puesto.id_puesto,
+            RegistroParqueo.hora_salida == None
+        ).first()
+        
+        info = {
+            'puesto': puesto,
+            'registro': registro,
+            'vehiculo': registro.vehiculo if registro else None
+        }
+        puestos_info.append(info)
+    
+    return render_template('puestos.html', puestos_info=puestos_info)
+
+# Ruta para ingresar un carro
+@routes.route('/ingresar-carro', methods=['GET', 'POST'])
+@auth.login_required
+def ingresar_carro():
+    db = next(get_db())
+    
+    # Obtener los puestos disponibles
+    puestos_disponibles = db.query(Puesto).filter_by(disponible=True).order_by(Puesto.id_puesto).all()
+    
+    # Obtener la tarifa vigente
+    tarifa_vigente = db.query(Tarifa).filter(Tarifa.fecha_fin_vigencia == None).first()
+    
+    # Obtener la configuración del parqueadero para la hora actual
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    if request.method == 'POST':
+        placa = request.form.get('placa').upper()
+        id_puesto = int(request.form.get('id_puesto'))
+        marca = request.form.get('marca', '')
+        modelo = request.form.get('modelo', '')
+        
+        # Verificar si hay algún registro activo con la misma placa
+        registro_existente = db.query(RegistroParqueo).join(Vehiculo).filter(
+            Vehiculo.placa == placa,
+            RegistroParqueo.hora_salida == None
+        ).first()
+        
+        if registro_existente:
+            flash(f'El vehículo con placa {placa} ya se encuentra en el parqueadero', 'danger')
+            return redirect(url_for('routes.ingresar_carro'))
+        
+        # Verificar si el puesto está disponible
+        puesto = db.query(Puesto).filter_by(id_puesto=id_puesto).first()
+        if not puesto or not puesto.disponible:
+            flash('El puesto seleccionado no está disponible', 'danger')
+            return redirect(url_for('routes.ingresar_carro'))
+        
+        try:
+            # Verificar si el vehículo ya existe
+            vehiculo = db.query(Vehiculo).filter_by(placa=placa).first()
+            if not vehiculo:
+                # Crear un nuevo vehículo
+                vehiculo = Vehiculo(placa=placa, marca=marca, modelo=modelo)
+                db.add(vehiculo)
+                db.flush()
+            
+            # Crear un nuevo registro de parqueo
+            registro = RegistroParqueo(
+                placa=placa,
+                id_puesto=id_puesto,
+                hora_entrada=config.hora_actual,
+                valor_tarifa_aplicada=tarifa_vigente.valor_por_hora,
+                id_tarifa=tarifa_vigente.id_tarifa
+            )
+            db.add(registro)
+            
+            # Actualizar el estado del puesto
+            puesto.disponible = False
+            
+            db.commit()
+            flash(f'Vehículo con placa {placa} ingresado exitosamente en el puesto {id_puesto}', 'success')
+            return redirect(url_for('routes.dashboard'))
+            
+        except Exception as e:
+            db.rollback()
+            flash(f'Error al ingresar el vehículo: {str(e)}', 'danger')
+            return redirect(url_for('routes.ingresar_carro'))
+    
+    return render_template('ingresar_carro.html', puestos_disponibles=puestos_disponibles, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+
+# Ruta para dar salida a un carro
+@routes.route('/salida-carro', methods=['GET', 'POST'])
+@auth.login_required
+def salida_carro():
+    db = next(get_db())
+    
+    # Obtener la configuración del parqueadero para la hora actual
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    # Obtener todos los registros activos (sin hora de salida)
+    registros_activos = db.query(RegistroParqueo).filter(
+        RegistroParqueo.hora_salida == None
+    ).all()
+    
+    if request.method == 'POST':
+        id_registro = request.form.get('id_registro')
+        
+        # Verificar si el registro existe
+        registro = db.query(RegistroParqueo).filter_by(id_registro=id_registro).first()
+        if not registro:
+            flash('Registro de parqueo no encontrado', 'danger')
+            return redirect(url_for('routes.salida_carro'))
+        
+        try:
+            # Calcular el tiempo de estancia en horas
+            tiempo_estancia = (config.hora_actual - registro.hora_entrada).total_seconds() / 3600
+            
+            # Redondear hacia arriba para fracciones de hora
+            horas_cobrar = math.ceil(tiempo_estancia)
+            
+            # Calcular el monto a pagar
+            monto_pagar = horas_cobrar * registro.valor_tarifa_aplicada
+            
+            # Actualizar el registro
+            registro.hora_salida = config.hora_actual
+            registro.total_pagado = monto_pagar
+            
+            # Liberar el puesto
+            puesto = db.query(Puesto).filter_by(id_puesto=registro.id_puesto).first()
+            puesto.disponible = True
+            
+            db.commit()
+            
+            flash(f'Salida exitosa del vehículo con placa {registro.placa}. Total pagado: ${monto_pagar:.2f}', 'success')
+            return redirect(url_for('routes.dashboard'))
+            
+        except Exception as e:
+            db.rollback()
+            flash(f'Error al procesar la salida: {str(e)}', 'danger')
+            return redirect(url_for('routes.salida_carro'))
+    
+    return render_template('salida_carro.html', registros_activos=registros_activos, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+
+# Ruta para avanzar el reloj
+@routes.route('/avanzar-reloj', methods=['GET', 'POST'])
+@auth.login_required
+def avanzar_reloj():
+    db = next(get_db())
+    
+    # Obtener la configuración actual
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    if request.method == 'POST':
+        minutos = int(request.form.get('minutos', 0))
+        horas = int(request.form.get('horas', 0))
+        
+        if minutos < 0 or horas < 0:
+            flash('El tiempo a avanzar no puede ser negativo', 'danger')
+            return redirect(url_for('routes.avanzar_reloj'))
+        
+        # Calcular nueva hora
+        nueva_hora = config.hora_actual + timedelta(hours=horas, minutes=minutos)
+        
+        # Verificar que la nueva hora esté dentro del horario de operación (6:00 - 21:00)
+        if nueva_hora.hour < 6 or nueva_hora.hour > 21 or (nueva_hora.hour == 21 and nueva_hora.minute > 0):
+            flash('La nueva hora debe estar dentro del horario de operación (6:00 - 21:00)', 'danger')
+            return redirect(url_for('routes.avanzar_reloj'))
+        
+        # Actualizar la hora
+        config.hora_actual = nueva_hora
+        db.commit()
+        
+        flash(f'Reloj avanzado exitosamente. Nueva hora: {nueva_hora.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
+        return redirect(url_for('routes.dashboard'))
+    
+    return render_template('avanzar_reloj.html', hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+
+# Ruta para cambiar la tarifa
+@routes.route('/cambiar-tarifa', methods=['GET', 'POST'])
+@auth.login_required
+def cambiar_tarifa():
+    db = next(get_db())
+    
+    # Obtener la tarifa actual
+    tarifa_actual = db.query(Tarifa).filter(Tarifa.fecha_fin_vigencia == None).first()
+    
+    # Obtener la configuración del parqueadero para la hora actual
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    # Obtener historial de tarifas
+    historial_tarifas = db.query(Tarifa).order_by(Tarifa.fecha_inicio_vigencia.desc()).all()
+    
+    if request.method == 'POST':
+        nuevo_valor = float(request.form.get('valor_por_hora'))
+        
+        if nuevo_valor <= 0:
+            flash('El valor de la tarifa debe ser mayor que cero', 'danger')
+            return redirect(url_for('routes.cambiar_tarifa'))
+        
+        try:
+            # Finalizar la vigencia de la tarifa actual
+            tarifa_actual.fecha_fin_vigencia = config.hora_actual
+            
+            # Crear nueva tarifa
+            nueva_tarifa = Tarifa(
+                valor_por_hora=nuevo_valor,
+                fecha_inicio_vigencia=config.hora_actual
+            )
+            db.add(nueva_tarifa)
+            db.commit()
+            
+            flash(f'Tarifa actualizada exitosamente a ${nuevo_valor:.2f} por hora', 'success')
+            return redirect(url_for('routes.dashboard'))
+            
+        except Exception as e:
+            db.rollback()
+            flash(f'Error al actualizar la tarifa: {str(e)}', 'danger')
+            return redirect(url_for('routes.cambiar_tarifa'))
+    
+    return render_template('cambiar_tarifa.html', tarifa_actual=tarifa_actual, historial_tarifas=historial_tarifas, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+
+# Importar func para las operaciones de suma
+from sqlalchemy import func

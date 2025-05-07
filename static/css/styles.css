@@ -1,0 +1,100 @@
+/* Estilos globales para la aplicación de Parqueadero UAN */
+
+/* Estilo para el body */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f5f5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Estilo para el footer */
+.footer {
+    margin-top: auto;
+}
+
+/* Estilos para las tarjetas de puestos */
+.card {
+    transition: transform 0.3s ease;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.card:hover {
+    transform: translateY(-5px);
+}
+
+/* Estilos para los iconos */
+.fas, .far {
+    margin-right: 5px;
+}
+
+/* Colores personalizados para disponibilidad de puestos */
+.bg-available {
+    background-color: #28a745;
+    color: white;
+}
+
+.bg-occupied {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Estilo para las tablas */
+.table thead th {
+    background-color: #343a40;
+    color: white;
+    border-color: #454d55;
+}
+
+/* Estilo para los botones de acción */
+.btn-action {
+    width: 140px;
+    text-align: center;
+}
+
+/* Estilo para las alertas con iconos */
+.alert i {
+    font-size: 1.2rem;
+    margin-right: 10px;
+}
+
+/* Estilo para la página de login */
+.login-wrapper {
+    margin-top: 80px;
+}
+
+.login-card {
+    max-width: 400px;
+    margin: 0 auto;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Estilo para dashboard */
+.dashboard-card {
+    height: 100%;
+}
+
+.dashboard-card .card-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.dashboard-card .display-4 {
+    font-size: 2.5rem;
+    font-weight: 600;
+}
+
+/* Estilos responsivos */
+@media (max-width: 768px) {
+    .dashboard-card .display-4 {
+        font-size: 2rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.9rem;
+    }
+}

@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}Parqueadero UAN - Ingresar Vehículo{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="fas fa-car mr-2"></i>Ingresar Vehículo</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-plus-circle mr-2"></i>Datos del Vehículo</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('routes.ingresar_carro') }}">
+                    <div class="form-group">
+                        <label for="placa">Placa:</label>
+                        <input type="text" class="form-control" id="placa" name="placa" required placeholder="Ej: ABC123" maxlength="10">
+                        <small class="form-text text-muted">Ingrese la placa sin espacios ni guiones</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="id_puesto">Puesto:</label>
+                        <select class="form-control" id="id_puesto" name="id_puesto" required>
+                            <option value="">Seleccione un puesto disponible</option>
+                            {% for puesto in puestos_disponibles %}
+                                <option value="{{ puesto.id_puesto }}">Puesto {{ puesto.id_puesto }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="marca">Marca (opcional):</label>
+                        <input type="text" class="form-control" id="marca" name="marca" placeholder="Ej: Toyota" maxlength="50">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="modelo">Modelo (opcional):</label>
+                        <input type="text" class="form-control" id="modelo" name="modelo" placeholder="Ej: Corolla" maxlength="50">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Hora de ingreso:</label>
+                        <input type="text" class="form-control" value="{{ hora_actual }}" readonly>
+                        <small class="form-text text-muted">Hora actual del sistema</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-plus-circle mr-2"></i>Registrar Ingreso
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle mr-2"></i>Información</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h5><i class="fas fa-clock mr-2"></i>Horario del Parqueadero</h5>
+                    <p>El parqueadero opera entre las 6:00 am y las 9:00 pm.</p>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <h5><i class="fas fa-money-bill-wave mr-2"></i>Tarifa</h5>
+                    <p>La tarifa actual es de $5,000 por hora o fracción.</p>
+                    <p>El sistema calcula automáticamente el valor a pagar al momento de la salida.</p>
+                </div>
+                
+                <div class="alert alert-success">
+                    <h5><i class="fas fa-check-circle mr-2"></i>Disponibilidad</h5>
+                    <p>Actualmente hay {{ puestos_disponibles|length }} puestos disponibles de un total de 40.</p>
+                </div>
+                
+                <div class="alert alert-secondary">
+                    <h5><i class="fas fa-question-circle mr-2"></i>¿Necesita ayuda?</h5>
+                    <p>Si tiene alguna duda sobre el proceso de ingreso, consulte con el personal del parqueadero.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Convertir placa a mayúsculas automáticamente
+    $(document).ready(function() {
+        $('#placa').on('input', function() {
+            $(this).val($(this).val().toUpperCase());
+        });
+    });
+</script>
+{% endblock %}

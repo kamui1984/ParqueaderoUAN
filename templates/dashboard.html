@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block title %}Parqueadero UAN - Dashboard{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="fas fa-tachometer-alt mr-2"></i>Dashboard</h2>
+
+<div class="row">
+    <!-- Tarjeta de Puestos Disponibles -->
+    <div class="col-md-3">
+        <div class="card mb-4 text-center">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-parking mr-2"></i>Puestos Disponibles</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">{{ puestos_disponibles }}</h2>
+                <p class="text-muted">de {{ config.total_puestos }} puestos totales</p>
+                <div class="progress">
+                    <div class="progress-bar bg-info" role="progressbar" style="width: {{ porcentaje_disponibilidad }}%"
+                         aria-valuenow="{{ porcentaje_disponibilidad }}" aria-valuemin="0" aria-valuemax="100">
+                        {{ porcentaje_disponibilidad|round(1) }}%
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-muted">
+                <a href="{{ url_for('routes.puestos') }}" class="btn btn-outline-info btn-sm">
+                    <i class="fas fa-list-ul mr-1"></i>Ver detalle
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tarjeta de Ingresos Totales -->
+    <div class="col-md-3">
+        <div class="card mb-4 text-center">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-dollar-sign mr-2"></i>Ingresos Totales</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">${{ "{:,.0f}".format(ingresos_totales) }}</h2>
+                <p class="text-muted">Ingresos acumulados</p>
+            </div>
+            <div class="card-footer text-muted">
+                <button class="btn btn-outline-success btn-sm" disabled>
+                    <i class="fas fa-chart-line mr-1"></i>Ver histórico
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tarjeta de Tarifa Actual -->
+    <div class="col-md-3">
+        <div class="card mb-4 text-center">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-money-bill-wave mr-2"></i>Tarifa Actual</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">${{ "{:,.0f}".format(tarifa_actual.valor_por_hora) }}</h2>
+                <p class="text-muted">por hora o fracción</p>
+            </div>
+            <div class="card-footer text-muted">
+                <a href="{{ url_for('routes.cambiar_tarifa') }}" class="btn btn-outline-warning btn-sm">
+                    <i class="fas fa-edit mr-1"></i>Cambiar
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tarjeta de Hora Actual -->
+    <div class="col-md-3">
+        <div class="card mb-4 text-center">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-clock mr-2"></i>Hora Actual</h5>
+            </div>
+            <div class="card-body">
+                <h2 class="display-4">{{ config.hora_actual.strftime('%H:%M') }}</h2>
+                <p class="text-muted">{{ config.hora_actual.strftime('%d/%m/%Y') }}</p>
+            </div>
+            <div class="card-footer text-muted">
+                <a href="{{ url_for('routes.avanzar_reloj') }}" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-forward mr-1"></i>Avanzar
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Vehículos actualmente en el parqueadero -->
+<div class="card mt-4">
+    <div class="card-header bg-dark text-white">
+        <h5 class="mb-0"><i class="fas fa-car mr-2"></i>Vehículos en el Parqueadero</h5>
+    </div>
+    <div class="card-body">
+        {% if carros_actuales %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Puesto</th>
+                        <th>Placa</th>
+                        <th>Hora de Entrada</th>
+                        <th>Tiempo Transcurrido</th>
+                        <th>Monto Actual</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for registro in carros_actuales %}
+                    <tr>
+                        <td><span class="badge badge-primary">{{ registro.id_puesto }}</span></td>
+                        <td>{{ registro.placa }}</td>
+                        <td>{{ registro.hora_entrada.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            {% set tiempo_estancia = (config.hora_actual - registro.hora_entrada).total_seconds() / 3600 %}
+                            {% set horas = (tiempo_estancia | int) %}
+                            {% set minutos = ((tiempo_estancia % 1) * 60) | int %}
+                            {{ horas }}h {{ minutos }}m
+                        </td>
+                        <td>
+                            {% set tiempo_estancia = (config.hora_actual - registro.hora_entrada).total_seconds() / 3600 %}
+                            {% set horas_cobrar = (tiempo_estancia + 0.99) | int %}
+                            ${{ "{:,.0f}".format(horas_cobrar * registro.valor_tarifa_aplicada) }}
+                        </td>
+                        <td>
+                            <form action="{{ url_for('routes.salida_carro') }}" method="post" style="display:inline;">
+                                <input type="hidden" name="id_registro" value="{{ registro.id_registro }}">
+                                <button type="submit" class="btn btn-sm btn-danger">
+                                    <i class="fas fa-sign-out-alt mr-1"></i>Salida
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle mr-2"></i>No hay vehículos en el parqueadero actualmente.
+        </div>
+        {% endif %}
+    </div>
+    <div class="card-footer text-center">
+        <a href="{{ url_for('routes.ingresar_carro') }}" class="btn btn-primary">
+            <i class="fas fa-plus-circle mr-2"></i>Ingresar Vehículo
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Para calcular el tiempo transcurrido en tiempo real si fuera necesario
+    $(document).ready(function() {
+        // Aquí podría ir código para actualizar los tiempos en tiempo real si se requiere
+    });
+</script>
+{% endblock %}

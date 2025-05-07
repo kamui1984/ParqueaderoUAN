@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}Parqueadero UAN - Puestos{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="fas fa-parking mr-2"></i>Estado de Puestos</h2>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="bg-success p-2 text-white rounded mr-2" style="width: 30px; height: 30px;"></div>
+                            <span>Disponible</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="bg-danger p-2 text-white rounded mr-2" style="width: 30px; height: 30px;"></div>
+                            <span>Ocupado</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    {% for info in puestos_info %}
+    <div class="col-md-3 mb-4">
+        <div class="card h-100 {% if info.puesto.disponible %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-header text-white {% if info.puesto.disponible %}bg-success{% else %}bg-danger{% endif %}">
+                <h5 class="mb-0 text-center">Puesto {{ info.puesto.id_puesto }}</h5>
+            </div>
+            <div class="card-body">
+                {% if info.puesto.disponible %}
+                <div class="text-center">
+                    <i class="fas fa-check-circle text-success" style="font-size: 3rem;"></i>
+                    <p class="mt-3">Disponible</p>
+                </div>
+                {% else %}
+                <div class="text-center">
+                    <i class="fas fa-car text-danger" style="font-size: 3rem;"></i>
+                    <hr>
+                    <p class="mb-1"><strong>Placa:</strong> {{ info.vehiculo.placa }}</p>
+                    {% if info.vehiculo.marca %}
+                    <p class="mb-1"><strong>Marca:</strong> {{ info.vehiculo.marca }}</p>
+                    {% endif %}
+                    {% if info.vehiculo.modelo %}
+                    <p class="mb-1"><strong>Modelo:</strong> {{ info.vehiculo.modelo }}</p>
+                    {% endif %}
+                    <p class="mb-1">
+                        <strong>Entrada:</strong> {{ info.registro.hora_entrada.strftime('%H:%M') }}
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer text-center">
+                {% if info.puesto.disponible %}
+                <a href="{{ url_for('routes.ingresar_carro') }}" class="btn btn-outline-success btn-sm">
+                    <i class="fas fa-plus-circle mr-1"></i>Ingresar vehículo
+                </a>
+                {% else %}
+                <form action="{{ url_for('routes.salida_carro') }}" method="post">
+                    <input type="hidden" name="id_registro" value="{{ info.registro.id_registro }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                        <i class="fas fa-sign-out-alt mr-1"></i>Dar salida
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
