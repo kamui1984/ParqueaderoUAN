@@ -182,7 +182,7 @@ def ingresar_carro():
             flash(f'Error al ingresar el vehículo: {str(e)}', 'danger')
             return redirect(url_for('routes.ingresar_carro'))
     
-    return render_template('ingresar_carro.html', puestos_disponibles=puestos_disponibles, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+    return render_template('ingresar_carro.html', puestos_disponibles=puestos_disponibles, config=config, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
 
 # Ruta para dar salida a un carro
 @routes.route('/salida-carro', methods=['GET', 'POST'])
@@ -235,7 +235,7 @@ def salida_carro():
             flash(f'Error al procesar la salida: {str(e)}', 'danger')
             return redirect(url_for('routes.salida_carro'))
     
-    return render_template('salida_carro.html', registros_activos=registros_activos, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+    return render_template('salida_carro.html', registros_activos=registros_activos, config=config, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
 
 # Ruta para avanzar el reloj
 @routes.route('/avanzar-reloj', methods=['GET', 'POST'])
@@ -247,29 +247,54 @@ def avanzar_reloj():
     config = db.query(ConfiguracionParqueadero).first()
     
     if request.method == 'POST':
-        minutos = int(request.form.get('minutos', 0))
-        horas = int(request.form.get('horas', 0))
+        # Verificar si se solicitó sincronizar con la hora del sistema
+        usar_hora_sistema = request.form.get('usar_hora_sistema')
         
-        if minutos < 0 or horas < 0:
-            flash('El tiempo a avanzar no puede ser negativo', 'danger')
-            return redirect(url_for('routes.avanzar_reloj'))
-        
-        # Calcular nueva hora
-        nueva_hora = config.hora_actual + timedelta(hours=horas, minutes=minutos)
-        
-        # Verificar que la nueva hora esté dentro del horario de operación (6:00 - 21:00)
-        if nueva_hora.hour < 6 or nueva_hora.hour > 21 or (nueva_hora.hour == 21 and nueva_hora.minute > 0):
-            flash('La nueva hora debe estar dentro del horario de operación (6:00 - 21:00)', 'danger')
-            return redirect(url_for('routes.avanzar_reloj'))
-        
-        # Actualizar la hora
-        config.hora_actual = nueva_hora
-        db.commit()
-        
-        flash(f'Reloj avanzado exitosamente. Nueva hora: {nueva_hora.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
-        return redirect(url_for('routes.dashboard'))
+        if usar_hora_sistema:
+            # Usar la hora actual del sistema
+            hora_sistema = datetime.now()
+            
+            # Verificar que la hora esté dentro del horario de operación (6:00 - 21:00)
+            if hora_sistema.hour < 6:
+                nueva_hora = hora_sistema.replace(hour=6, minute=0, second=0, microsecond=0)
+                flash('La hora del sistema está fuera del horario de operación. Se ajustó a las 6:00 AM.', 'warning')
+            elif hora_sistema.hour > 21:
+                nueva_hora = hora_sistema.replace(hour=21, minute=0, second=0, microsecond=0)
+                flash('La hora del sistema está fuera del horario de operación. Se ajustó a las 9:00 PM.', 'warning')
+            else:
+                nueva_hora = hora_sistema
+                
+            # Actualizar la hora
+            config.hora_actual = nueva_hora
+            db.commit()
+            
+            flash(f'Reloj sincronizado exitosamente con la hora del sistema: {nueva_hora.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
+            return redirect(url_for('routes.dashboard'))
+        else:
+            # Modo tradicional - avanzar manualmente
+            minutos = int(request.form.get('minutos', 0))
+            horas = int(request.form.get('horas', 0))
+            
+            if minutos < 0 or horas < 0:
+                flash('El tiempo a avanzar no puede ser negativo', 'danger')
+                return redirect(url_for('routes.avanzar_reloj'))
+            
+            # Calcular nueva hora
+            nueva_hora = config.hora_actual + timedelta(hours=horas, minutes=minutos)
+            
+            # Verificar que la nueva hora esté dentro del horario de operación (6:00 - 21:00)
+            if nueva_hora.hour < 6 or nueva_hora.hour > 21 or (nueva_hora.hour == 21 and nueva_hora.minute > 0):
+                flash('La nueva hora debe estar dentro del horario de operación (6:00 - 21:00)', 'danger')
+                return redirect(url_for('routes.avanzar_reloj'))
+            
+            # Actualizar la hora
+            config.hora_actual = nueva_hora
+            db.commit()
+            
+            flash(f'Reloj avanzado exitosamente. Nueva hora: {nueva_hora.strftime("%Y-%m-%d %H:%M:%S")}', 'success')
+            return redirect(url_for('routes.dashboard'))
     
-    return render_template('avanzar_reloj.html', hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+    return render_template('avanzar_reloj.html', config=config, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
 
 # Ruta para cambiar la tarifa
 @routes.route('/cambiar-tarifa', methods=['GET', 'POST'])
@@ -313,7 +338,37 @@ def cambiar_tarifa():
             flash(f'Error al actualizar la tarifa: {str(e)}', 'danger')
             return redirect(url_for('routes.cambiar_tarifa'))
     
-    return render_template('cambiar_tarifa.html', tarifa_actual=tarifa_actual, historial_tarifas=historial_tarifas, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
+    return render_template('cambiar_tarifa.html', tarifa_actual=tarifa_actual, historial_tarifas=historial_tarifas, config=config, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
 
 # Importar func para las operaciones de suma
 from sqlalchemy import func
+
+# Ruta para mostrar el histórico de ingresos
+@routes.route('/historico-ingresos')
+@auth.login_required
+def historico_ingresos():
+    db = next(get_db())
+    
+    # Obtener la configuración del parqueadero
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    # Obtener registros completados (con hora de salida y pago)
+    registros_completados = db.query(RegistroParqueo).filter(
+        RegistroParqueo.hora_salida != None,
+        RegistroParqueo.total_pagado != None
+    ).order_by(RegistroParqueo.hora_salida.desc()).all()
+    
+    # Calcular ingresos totales
+    ingresos_totales = db.query(func.sum(RegistroParqueo.total_pagado)).scalar() or 0
+    
+    # Agrupar por día para gráfico (opcional)
+    # Esta implementación básica muestra los últimos registros
+    # Para un análisis más detallado se podría agregar agrupación por día/mes
+    
+    return render_template(
+        'historico_ingresos.html',
+        registros=registros_completados,
+        ingresos_totales=ingresos_totales,
+        config=config,
+        hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S')
+    )
