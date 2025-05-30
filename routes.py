@@ -1,8 +1,8 @@
-from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, flash, jsonify, current_app, session
 from flask_httpauth import HTTPBasicAuth
 from sqlalchemy.orm import Session
 from models import Puesto, Vehiculo, Tarifa, RegistroParqueo, ConfiguracionParqueadero, Usuario, get_db
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import bcrypt
 import math
 from functools import wraps
@@ -122,6 +122,11 @@ def ingresar_carro():
     
     # Obtener los puestos disponibles
     puestos_disponibles = db.query(Puesto).filter_by(disponible=True).order_by(Puesto.id_puesto).all()
+    
+    # Si no hay puestos disponibles, mostrar mensaje emergente
+    if len(puestos_disponibles) == 0:
+        flash('No hay puestos disponibles en el parqueadero', 'danger')
+        return redirect(url_for('routes.dashboard'))
     
     # Obtener la tarifa vigente
     tarifa_vigente = db.query(Tarifa).filter(Tarifa.fecha_fin_vigencia == None).first()
@@ -341,7 +346,7 @@ def cambiar_tarifa():
     return render_template('cambiar_tarifa.html', tarifa_actual=tarifa_actual, historial_tarifas=historial_tarifas, config=config, hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S'))
 
 # Importar func para las operaciones de suma
-from sqlalchemy import func
+from sqlalchemy import func, desc, and_, or_
 
 # Ruta para mostrar el histórico de ingresos
 @routes.route('/historico-ingresos')
@@ -371,4 +376,118 @@ def historico_ingresos():
         ingresos_totales=ingresos_totales,
         config=config,
         hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+# Ruta para buscar vehículos por placa
+@routes.route('/buscar-carro', methods=['GET', 'POST'])
+@auth.login_required
+def buscar_carro():
+    db = next(get_db())
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    placa_buscada = None
+    resultado = None
+    
+    if request.method == 'POST':
+        placa_buscada = request.form.get('placa').upper()
+        
+        # Buscar el vehículo
+        vehiculo = db.query(Vehiculo).filter_by(placa=placa_buscada).first()
+        
+        if vehiculo:
+            # Buscar si tiene un registro activo (está en el parqueadero)
+            registro_activo = db.query(RegistroParqueo).filter(
+                RegistroParqueo.placa == placa_buscada,
+                RegistroParqueo.hora_salida == None
+            ).first()
+            
+            resultado = {
+                'vehiculo': vehiculo,
+                'registro': registro_activo
+            }
+        else:
+            # Mostrar mensaje de que la placa no se encuentra registrada
+            flash(f'La placa {placa_buscada} no se encuentra registrada en el parqueadero', 'warning')
+    
+    return render_template(
+        'buscar_carro.html',
+        placa_buscada=placa_buscada,
+        resultado=resultado,
+        config=config,
+        hora_actual=config.hora_actual.strftime('%Y-%m-%d %H:%M:%S')
+    )
+
+# Ruta para mostrar el resumen diario
+@routes.route('/resumen-diario', methods=['GET', 'POST'])
+@auth.login_required
+def resumen_diario():
+    db = next(get_db())
+    config = db.query(ConfiguracionParqueadero).first()
+    
+    # Fecha actual del sistema (la del parqueadero)
+    fecha_actual = config.hora_actual.date()
+    fecha_seleccionada = fecha_actual
+    
+    if request.method == 'POST' and request.form.get('fecha'):
+        fecha_seleccionada = datetime.strptime(request.form.get('fecha'), '%Y-%m-%d').date()
+    
+    # Obtener inicio y fin del día seleccionado
+    inicio_dia = datetime.combine(fecha_seleccionada, datetime.min.time())
+    fin_dia = datetime.combine(fecha_seleccionada, datetime.max.time())
+    
+    # Vehículos ingresados ese día
+    vehiculos_ingresados = db.query(RegistroParqueo).join(Vehiculo).filter(
+        RegistroParqueo.hora_entrada >= inicio_dia,
+        RegistroParqueo.hora_entrada <= fin_dia
+    ).order_by(RegistroParqueo.hora_entrada).all()
+    
+    # Vehículos que salieron ese día
+    vehiculos_salidos = db.query(RegistroParqueo).join(Vehiculo).filter(
+        RegistroParqueo.hora_salida >= inicio_dia,
+        RegistroParqueo.hora_salida <= fin_dia
+    ).order_by(RegistroParqueo.hora_salida).all()
+    
+    # Contadores
+    total_ingresados = len(vehiculos_ingresados)
+    total_salidos = len(vehiculos_salidos)
+    
+    # Ingresos del día
+    ingresos_totales = db.query(func.sum(RegistroParqueo.total_pagado)).filter(
+        RegistroParqueo.hora_salida >= inicio_dia,
+        RegistroParqueo.hora_salida <= fin_dia
+    ).scalar() or 0
+    
+    # Calcular porcentaje máximo de ocupación del día
+    total_puestos = config.total_puestos
+    
+    # Máxima ocupación durante el día (calculando por cada hora)
+    max_ocupacion = 0
+    for hora in range(6, 22):  # Horario de 6am a 9pm
+        hora_punto = datetime.combine(fecha_seleccionada, datetime.min.time().replace(hour=hora))
+        
+        # Contar carros presentes a esa hora (entraron antes y salieron después o no han salido)
+        ocupacion = db.query(RegistroParqueo).filter(
+            RegistroParqueo.hora_entrada <= hora_punto,
+            or_(
+                RegistroParqueo.hora_salida > hora_punto,
+                RegistroParqueo.hora_salida == None
+            )
+        ).count()
+        
+        if ocupacion > max_ocupacion:
+            max_ocupacion = ocupacion
+    
+    porcentaje_ocupacion = (max_ocupacion / total_puestos) * 100 if total_puestos > 0 else 0
+    
+    return render_template(
+        'resumen_diario.html',
+        fecha_actual=fecha_actual.strftime('%d/%m/%Y'),
+        fecha_seleccionada=fecha_seleccionada.strftime('%Y-%m-%d'),
+        vehiculos_ingresados=vehiculos_ingresados,
+        vehiculos_salidos=vehiculos_salidos,
+        total_ingresados=total_ingresados,
+        total_salidos=total_salidos,
+        ingresos_totales=ingresos_totales,
+        porcentaje_ocupacion=porcentaje_ocupacion,
+        config=config
     )

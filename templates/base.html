@@ -41,6 +41,18 @@
                     <li class="nav-item {% if request.endpoint.endswith('salida_carro') %}active{% endif %}">
                         <a class="nav-link" href="{{ url_for('routes.salida_carro') }}">Salida Vehículo</a>
                     </li>
+                    <li class="nav-item {% if request.endpoint.endswith('buscar_carro') %}active{% endif %}">
+                        <a class="nav-link" href="{{ url_for('routes.buscar_carro') }}"><i class="fas fa-search mr-1"></i>Buscar Vehículo</a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="adminDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            Administración
+                        </a>
+                        <div class="dropdown-menu" aria-labelledby="adminDropdown">
+                            <a class="dropdown-item {% if request.endpoint.endswith('resumen_diario') %}active{% endif %}" href="{{ url_for('routes.resumen_diario') }}"><i class="fas fa-chart-pie mr-1"></i>Resumen Diario</a>
+                            <a class="dropdown-item {% if request.endpoint.endswith('historico_ingresos') %}active{% endif %}" href="{{ url_for('routes.historico_ingresos') }}"><i class="fas fa-chart-line mr-1"></i>Histórico de Ingresos</a>
+                        </div>
+                    </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="configDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                             Configuración

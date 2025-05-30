@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block title %}Parqueadero UAN - Buscar Vehículo{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="fas fa-search mr-2"></i>Buscar Vehículo</h2>
+
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Ingrese la Placa del Vehículo</h5>
+            </div>
+            <div class="card-body">
+                <form id="buscar-form" method="POST" action="{{ url_for('routes.buscar_carro') }}">
+                    <div class="form-group">
+                        <label for="placa">Placa:</label>
+                        <input type="text" class="form-control" id="placa" name="placa" required 
+                               placeholder="Ingrese la placa (ej. ABC123)" value="{{ placa_buscada if placa_buscada }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search mr-2"></i>Buscar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if resultado %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Vehículo Encontrado</h5>
+            </div>
+            <div class="card-body">
+                <h4>Placa: {{ resultado.vehiculo.placa }}</h4>
+                
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <h5>Datos del Vehículo</h5>
+                        <ul class="list-group">
+                            <li class="list-group-item"><strong>Marca:</strong> {{ resultado.vehiculo.marca or 'No registrada' }}</li>
+                            <li class="list-group-item"><strong>Modelo:</strong> {{ resultado.vehiculo.modelo or 'No registrado' }}</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Estado Actual</h5>
+                        <ul class="list-group">
+                            <li class="list-group-item"><strong>Estado:</strong> 
+                                {% if resultado.registro %}
+                                <span class="badge badge-danger">En el parqueadero</span>
+                                {% else %}
+                                <span class="badge badge-secondary">Fuera del parqueadero</span>
+                                {% endif %}
+                            </li>
+                            {% if resultado.registro %}
+                            <li class="list-group-item"><strong>Puesto:</strong> {{ resultado.registro.id_puesto }}</li>
+                            <li class="list-group-item"><strong>Hora de entrada:</strong> {{ resultado.registro.hora_entrada.strftime('%Y-%m-%d %H:%M') }}</li>
+                            <li class="list-group-item">
+                                <strong>Tiempo de estancia:</strong>
+                                {% set tiempo_estancia = (config.hora_actual - resultado.registro.hora_entrada).total_seconds() / 3600 %}
+                                {% set horas = (tiempo_estancia | int) %}
+                                {% set minutos = ((tiempo_estancia % 1) * 60) | int %}
+                                {{ horas }}h {{ minutos }}m
+                            </li>
+                            <li class="list-group-item">
+                                <strong>Monto actual:</strong>
+                                {% set tiempo_estancia = (config.hora_actual - resultado.registro.hora_entrada).total_seconds() / 3600 %}
+                                {% set horas_cobrar = (tiempo_estancia + 0.99) | int %}
+                                ${{ "{:,.0f}".format(horas_cobrar * resultado.registro.valor_tarifa_aplicada) }}
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                
+                {% if resultado.registro %}
+                <div class="text-center mt-4">
+                    <form action="{{ url_for('routes.salida_carro') }}" method="post">
+                        <input type="hidden" name="id_registro" value="{{ resultado.registro.id_registro }}">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-sign-out-alt mr-1"></i>Dar salida
+                        </button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% elif placa_buscada %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle mr-2"></i>
+            <strong>Vehículo no encontrado:</strong> La placa {{ placa_buscada }} no está registrada en el parqueadero.
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
